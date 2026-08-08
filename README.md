@@ -11,7 +11,3 @@ Klik **Choose File**, pilih gambar QR code 2FA. Hasil (nama akun, issuer, secret
 ## Keamanan
 
 Semua proses terjadi lokal di browser, tidak ada data terkirim ke server. Secret key bersifat sensitif — jangan dibagikan sembarangan.
-
-## Teknologi
-
-[jsQR](https://github.com/cozmo/jsQR) & [protobuf.js](https://github.com/protobufjs/protobuf.js)
