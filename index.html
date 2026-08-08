@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Pembaca QR Google Authenticator</title>
+<style>
+    body {font-family: monospace, sans-serif;background: #f4f6f8;color: #333;padding: 20px;}p {font-family: monospace}h1 {color: #2c3e50;font-size: 24px;}.container {background: white;padding: 20px;border-radius: 10px;max-width: 40em;margin: auto;box-shadow: 0 4px 10px rgba(0,0,0,0.1);}input[type="file"] {margin-top: 10px;padding: 8px;font-family: monospace;border: 1px solid #ccc;border-radius: 6px;background: #f9f9f9;width: 100%;box-sizing: border-box;}#output {background: #1e1e1e;color: #00ff88;padding: 15px;border-radius: 6px;margin-top: 20px;font-family: monospace;white-space: pre-wrap;max-height: 400px;overflow-y: auto;}.footer {margin-top: 2rem;text-align: center;font-size: 0.875rem;color: #6b7280;}.footer a {color: #3b82f6;font-weight: 600;text-decoration: none;}.footer a:hover {text-decoration: underline;}
+</style>
+</head>
+<body>
+<div class="container">
+    <h3 style="margin-bottom: 5px">🔍 Pembaca QR Google Authenticator</h3>
+    <p style="margin-top:0">Unggah gambar kode QR 2FA untuk mengekstrak akun dan secret-nya.</p>
+    <input type="file" id="fileInput" accept="image/*">
+    <pre id="output">Silakan Upload QR Google Authenticator</pre>
+		<div class="footer">
+			📂 Buka Aplikasi di <a href="https://mizwar01.github.io/pembaca-qr-authenticator/" target="_blank">GitHub Pages</a>
+		</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/protobufjs/dist/protobuf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+<script>
+document.getElementById('fileInput').addEventListener('change', handleFile);
+
+function handleFile(evt) {
+    const file = evt.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+            if (code) {
+                processQR(code.data);
+            } else {
+                document.getElementById('output').textContent = "❌ QR code tidak terbaca.";
+            }
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function processQR(qrText) {
+    try {
+        if (qrText.startsWith("otpauth://")) {
+            const url = new URL(qrText);
+            const secret = url.searchParams.get("secret");
+            const issuer = url.searchParams.get("issuer") || "(tidak ada)";
+            const label = decodeURIComponent(url.pathname.replace(/^\/\//, ''));
+            if (secret) {
+                document.getElementById('output').textContent =
+                    `📌 OTP Auth\n` +
+                    `Nama   : ${label}\n` +
+                    `Issuer : ${issuer}\n` +
+                    `Secret : ${secret}`;
+            } else {
+                document.getElementById('output').textContent = "⚠️ Secret tidak ditemukan di QR.";
+            }
+            return;
+        }
+        const url = new URL(qrText);
+        let dataParam = url.searchParams.get("data");
+
+        if (!dataParam) {
+            document.getElementById('output').textContent = "⚠️ Parameter data= tidak ditemukan.";
+            return;
+        }
+
+        dataParam = dataParam.replace(/ /g, '+').replace(/%20/g, '+').replace(/%2B/gi, '+');
+
+        const binary = atob(dataParam);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+
+        const root = protobuf.Root.fromJSON({
+            nested: {
+                MigrationPayload: {
+                    fields: {
+                        otpParameters: { rule: "repeated", type: "OtpParameters", id: 1 },
+                        version: { type: "int32", id: 2 },
+                        batchSize: { type: "int32", id: 3 },
+                        batchIndex: { type: "int32", id: 4 },
+                        batchId: { type: "bytes", id: 5 }
+                    }
+                },
+                OtpParameters: {
+                    fields: {
+                        secret: { type: "bytes", id: 1 },
+                        name: { type: "string", id: 2 },
+                        issuer: { type: "string", id: 3 },
+                        algorithm: { type: "int32", id: 4 },
+                        digits: { type: "int32", id: 5 },
+                        type: { type: "int32", id: 6 },
+                        counter: { type: "int64", id: 7 }
+                    }
+                }
+            }
+        });
+
+        const MigrationPayload = root.lookupType("MigrationPayload");
+        const payload = MigrationPayload.decode(bytes);
+
+        if (!payload.otpParameters || payload.otpParameters.length === 0) {
+            document.getElementById('output').textContent = "⚠️ Tidak ada akun ditemukan di payload migrasi.";
+            return;
+        }
+
+        let result = "";
+        payload.otpParameters.forEach((param, i) => {
+            const secretBase32 = base32Encode(param.secret);
+            result += `📌 Akun ${i+1}\n`;
+            result += `Nama   : ${param.name}\n`;
+            result += `Issuer : ${param.issuer}\n`;
+            result += `Secret : ${secretBase32}\n\n`;
+        });
+
+        document.getElementById('output').textContent = result;
+    } catch (err) {
+        document.getElementById('output').textContent = "❌ Error: " + err.message;
+    }
+}
+
+function base32Encode(bytes) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0, value = 0, output = '';
+    for (let i = 0; i < bytes.length; i++) {
+        value = (value << 8) | bytes[i];
+        bits += 8;
+        while (bits >= 5) {
+            output += alphabet[(value >>> (bits - 5)) & 31];
+            bits -= 5;
+        }
+    }
+    if (bits > 0) {
+        output += alphabet[(value << (5 - bits)) & 31];
+    }
+    return output;
+}
+</script>
+</body>
+</html>
