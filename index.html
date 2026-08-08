@@ -4,7 +4,28 @@
 <meta charset="utf-8">
 <title>Pembaca QR Google Authenticator</title>
 <style>
-    body {font-family: monospace, sans-serif;background: #f4f6f8;color: #333;padding: 20px;}p {font-family: monospace}h1 {color: #2c3e50;font-size: 24px;}.container {background: white;padding: 20px;border-radius: 10px;max-width: 40em;margin: auto;box-shadow: 0 4px 10px rgba(0,0,0,0.1);}input[type="file"] {margin-top: 10px;padding: 8px;font-family: monospace;border: 1px solid #ccc;border-radius: 6px;background: #f9f9f9;width: 100%;box-sizing: border-box;}#output {background: #1e1e1e;color: #00ff88;padding: 15px;border-radius: 6px;margin-top: 20px;font-family: monospace;white-space: pre-wrap;max-height: 400px;overflow-y: auto;}.footer {margin-top: 2rem;text-align: center;font-size: 0.875rem;color: #6b7280;}.footer a {color: #3b82f6;font-weight: 600;text-decoration: none;}.footer a:hover {text-decoration: underline;}
+    body {font-family: monospace, sans-serif;background: #f4f6f8;color: #333;padding: 20px;}
+    p {font-family: monospace}
+    h1 {color: #2c3e50;font-size: 24px;}
+    .container {background: white;padding: 20px;border-radius: 10px;max-width: 40em;margin: auto;box-shadow: 0 4px 10px rgba(0,0,0,0.1);}
+    input[type="file"] {margin-top: 10px;padding: 8px;font-family: monospace;border: 1px solid #ccc;border-radius: 6px;background: #f9f9f9;width: 100%;box-sizing: border-box;}
+    #preview {display:none;margin-top:14px;text-align:center;}
+    #preview img {max-width: 220px;max-height: 220px;border-radius: 8px;border: 1px solid #e5e7eb;box-shadow: 0 2px 6px rgba(0,0,0,0.08);}
+    #status {margin-top: 16px;font-family: monospace;color: #6b7280;display:none;align-items:center;gap:8px;}
+    .spinner {width: 16px;height: 16px;border: 3px solid #d1d5db;border-top-color: #3498db;border-radius: 50%;animation: spin 0.7s linear infinite;}
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #output {margin-top: 20px;}
+    .msg {background: #1e1e1e;color: #f87171;padding: 15px;border-radius: 6px;font-family: monospace;white-space: pre-wrap;}
+    .msg.ok {color: #00ff88;}
+    .account-card {background: #1e1e1e;color: #00ff88;padding: 15px;border-radius: 6px;margin-bottom: 12px;font-family: monospace;position: relative;}
+    .account-card .row {white-space: pre-wrap;margin-bottom: 4px;}
+    .account-card .row .label {color: #9ca3af;}
+    .copy-btn {margin-top: 8px;padding: 6px 10px;background: #3498db;color: white;border: none;border-radius: 6px;cursor: pointer;font-family: monospace;font-size: 0.85rem;}
+    .copy-btn:hover {background: #2980b9;}
+    .copy-btn.copied {background: #16a34a;}
+    .footer {margin-top: 2rem;text-align: center;font-size: 0.875rem;color: #6b7280;}
+    .footer a {color: #3b82f6;font-weight: 600;text-decoration: none;}
+    .footer a:hover {text-decoration: underline;}
 </style>
 </head>
 <body>
@@ -12,45 +33,128 @@
     <h3 style="margin-bottom: 5px">🔍 Pembaca QR Google Authenticator</h3>
     <p style="margin-top:0">Unggah gambar kode QR 2FA untuk mengekstrak akun dan secret-nya.</p>
     <input type="file" id="fileInput" accept="image/*">
-    <pre id="output">Silakan Upload QR Google Authenticator</pre>
-		<div class="footer">
-			📂 Buka Aplikasi di <a href="https://mizwar01.github.io/pembaca-qr-authenticator/" target="_blank">GitHub Pages</a>
-		</div>
+
+    <div id="preview">
+        <img id="previewImg" alt="Preview QR">
+    </div>
+
+    <div id="status">
+        <div class="spinner"></div>
+        <span>Membaca kode QR...</span>
+    </div>
+
+    <div id="output">
+        <div class="msg">Silakan Upload QR Google Authenticator</div>
+    </div>
+
+    <div class="footer">
+        📂 Buka Aplikasi di <a href="https://mizwar01.github.io/pembaca-qr-authenticator/" target="_blank">GitHub Pages</a>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/protobufjs/dist/protobuf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
 <script>
-document.getElementById('fileInput').addEventListener('change', handleFile);
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const previewImg = document.getElementById('previewImg');
+const status = document.getElementById('status');
+const output = document.getElementById('output');
+
+fileInput.addEventListener('change', handleFile);
+
+function showStatus(show) {
+    status.style.display = show ? 'flex' : 'none';
+}
+
+function setMessage(text, ok) {
+    output.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'msg' + (ok ? ' ok' : '');
+    div.textContent = text;
+    output.appendChild(div);
+}
 
 function handleFile(evt) {
     const file = evt.target.files[0];
     if (!file) return;
 
+    output.innerHTML = '';
+    preview.style.display = 'none';
+
     const reader = new FileReader();
     reader.onload = function(e) {
+        previewImg.src = e.target.result;
+        preview.style.display = 'block';
+
+        showStatus(true);
+
         const img = new Image();
         img.onload = function() {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            setTimeout(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-            if (code) {
-                processQR(code.data);
-            } else {
-                document.getElementById('output').textContent = "❌ QR code tidak terbaca.";
-            }
+                showStatus(false);
+
+                if (code) {
+                    processQR(code.data);
+                } else {
+                    setMessage("❌ QR code tidak terbaca.", false);
+                }
+            }, 150);
         };
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
 
+function renderAccountCard(nama, issuer, secret) {
+    const card = document.createElement('div');
+    card.className = 'account-card';
+
+    const rowNama = document.createElement('div');
+    rowNama.className = 'row';
+    rowNama.innerHTML = `<span class="label">Nama   :</span> ${nama}`;
+    card.appendChild(rowNama);
+
+    const rowIssuer = document.createElement('div');
+    rowIssuer.className = 'row';
+    rowIssuer.innerHTML = `<span class="label">Issuer :</span> ${issuer}`;
+    card.appendChild(rowIssuer);
+
+    const rowSecret = document.createElement('div');
+    rowSecret.className = 'row';
+    rowSecret.innerHTML = `<span class="label">Secret :</span> ${secret}`;
+    card.appendChild(rowSecret);
+
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '📋 Copy Secret';
+    btn.onclick = function() {
+        navigator.clipboard.writeText(secret).then(() => {
+            btn.textContent = '✅ Tersalin!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '📋 Copy Secret';
+                btn.classList.remove('copied');
+            }, 1500);
+        }).catch(() => {
+            btn.textContent = '❌ Gagal copy';
+        });
+    };
+    card.appendChild(btn);
+
+    return card;
+}
+
 function processQR(qrText) {
+    output.innerHTML = '';
     try {
         if (qrText.startsWith("otpauth://")) {
             const url = new URL(qrText);
@@ -58,13 +162,9 @@ function processQR(qrText) {
             const issuer = url.searchParams.get("issuer") || "(tidak ada)";
             const label = decodeURIComponent(url.pathname.replace(/^\/\//, ''));
             if (secret) {
-                document.getElementById('output').textContent =
-                    `📌 OTP Auth\n` +
-                    `Nama   : ${label}\n` +
-                    `Issuer : ${issuer}\n` +
-                    `Secret : ${secret}`;
+                output.appendChild(renderAccountCard(label, issuer, secret));
             } else {
-                document.getElementById('output').textContent = "⚠️ Secret tidak ditemukan di QR.";
+                setMessage("⚠️ Secret tidak ditemukan di QR.", false);
             }
             return;
         }
@@ -72,7 +172,7 @@ function processQR(qrText) {
         let dataParam = url.searchParams.get("data");
 
         if (!dataParam) {
-            document.getElementById('output').textContent = "⚠️ Parameter data= tidak ditemukan.";
+            setMessage("⚠️ Parameter data= tidak ditemukan.", false);
             return;
         }
 
@@ -113,22 +213,16 @@ function processQR(qrText) {
         const payload = MigrationPayload.decode(bytes);
 
         if (!payload.otpParameters || payload.otpParameters.length === 0) {
-            document.getElementById('output').textContent = "⚠️ Tidak ada akun ditemukan di payload migrasi.";
+            setMessage("⚠️ Tidak ada akun ditemukan di payload migrasi.", false);
             return;
         }
 
-        let result = "";
-        payload.otpParameters.forEach((param, i) => {
+        payload.otpParameters.forEach((param) => {
             const secretBase32 = base32Encode(param.secret);
-            result += `📌 Akun ${i+1}\n`;
-            result += `Nama   : ${param.name}\n`;
-            result += `Issuer : ${param.issuer}\n`;
-            result += `Secret : ${secretBase32}\n\n`;
+            output.appendChild(renderAccountCard(param.name, param.issuer, secretBase32));
         });
-
-        document.getElementById('output').textContent = result;
     } catch (err) {
-        document.getElementById('output').textContent = "❌ Error: " + err.message;
+        setMessage("❌ Error: " + err.message, false);
     }
 }
 
